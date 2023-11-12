@@ -10,6 +10,7 @@ import time
 
 class TempSensor(object):
 
+    # default to DHT22
     DEFAULT_TYPE = 22
     DEFAULT_TIMEOUT = 60
 

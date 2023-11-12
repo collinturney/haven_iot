@@ -21,21 +21,26 @@ class RelayCommand(Enum):
 class Relay(object):
     def __init__(self, **kwargs):
         self.pin = kwargs["pin"]
+        self.name = kwargs.get("name", None)
         self.delay = kwargs.get("delay", 1)
+        self.metrics = MetricsPublisher()
         gpio.setmode(gpio.BOARD)
         gpio.setwarnings(False)
         gpio.setup(self.pin, gpio.OUT)
 
     def open(self):
         gpio.output(self.pin, gpio.HIGH)
+        self._publish(RelayCommand.open)
 
     def close(self):
         gpio.output(self.pin, gpio.LOW)
+        self._publish(RelayCommand.close)
 
     def toggle(self, delay=None):
-        self.close()
+        gpio.output(self.pin, gpio.LOW)
         time.sleep(delay or self.delay)
-        self.open()
+        gpio.output(self.pin, gpio.HIGH)
+        self._publish(RelayCommand.toggle)
 
     def run(self, command: RelayCommand):
         if command == RelayCommand.open:
@@ -46,6 +51,10 @@ class Relay(object):
             self.toggle()
         else:
             raise ValueError(f"Invalid relay command: {command}")
+
+    def _publish(self, command):
+        if self.name and self.metrics:
+            self.metrics.publish({self.name: str(command)})
 
     def __enter__(self):
         return self
@@ -91,22 +100,19 @@ class RemoteRelay(Relay):
 
 
 def configure():
-    parser = argparse.ArgumentParser(description="GPIO relay control")
+    parser = argparse.ArgumentParser(description="GPIO relay controller")
     parser.add_argument("command", type=RelayCommand, choices=list(RelayCommand))
     parser.add_argument("-p", "--pin", type=int, required=True)
     parser.add_argument("-d", "--delay", type=int, default=1)
-    parser.add_argument("--relay-name", default="relay")
+    parser.add_argument("-n", "--name", default="relay")
     return parser.parse_args()
 
 
 def main():
     args = configure()
     
-    metrics = MetricsPublisher()
-    relay = Relay(**vars(args))
-    relay.run(args.command)
-
-    metrics.publish({args.relay_name: str(args.command)})
+    with Relay(**vars(args)) as relay:
+        relay.run(args.command)
 
 
 if __name__ == "__main__":
